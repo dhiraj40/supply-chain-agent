@@ -1,0 +1,20 @@
+command:
+  - streamlit
+  - run
+  - app.py
+
+env:
+  - name: ENVIRONMENT
+    value: "dev"
+
+  - name: MODEL_NAME
+    valueFrom: serving-endpoint
+
+  - name: GENIE_SPACE_ID
+    valueFrom: genie-space
+
+  - name: AI_SEARCH_INDEX
+    value: "document_chunks_index"
+
+  - name: STREAMLIT_GATHER_USAGE_STATS
+    value: "false"

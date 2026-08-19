@@ -1,0 +1,35 @@
+# Databricks Asset Bundle Configuration for Supply Chain Agent
+bundle:
+  name: supply-chain-agent
+
+variables:
+  environment:
+    description: Environment name (dev, staging, prod)
+    default: dev
+  model_name:
+    description: Model Serving endpoint name for LLM
+    default: databricks-gpt-oss-120b
+  genie_space_id:
+    description: Genie Space ID for natural language analytics
+    default: ""
+  ai_search_index:
+    description: Vector Search index name for document RAG
+    default: document_chunks_index
+
+targets:
+  dev:
+    default: true
+    mode: development
+    variables:
+      environment: dev
+
+  prod:
+    mode: production
+    variables:
+      environment: prod
+
+resources:
+  apps:
+    supply_chain_agent_app:
+      name: supply-chain-agent-${bundle.target}
+      source_code_path: .
