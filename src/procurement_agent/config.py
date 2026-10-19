@@ -19,6 +19,6 @@ VECTOR_INDEX_NAME = (
 )
 MODEL_NAME = os.getenv("MODEL_NAME", "databricks-gpt-oss-120b")
 
-# Required only if structured queries use the Databricks SQL connector.
-# Keep unset while the app is configured to use a different query path.
-SQL_WAREHOUSE_HTTP_PATH = os.getenv("DATABRICKS_SQL_WAREHOUSE_HTTP_PATH")
+# Dedicated Genie Agent for procurement analytics.
+# Configure this value in the Databricks App environment.
+PROCUREMENT_GENIE_SPACE_ID = os.getenv("PROCUREMENT_GENIE_SPACE_ID")
