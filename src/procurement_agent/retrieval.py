@@ -39,12 +39,9 @@ def _sql_connection():
         raise RuntimeError("Unable to obtain Databricks app authentication headers.")
     access_token = token.get("Authorization", "").removeprefix("Bearer ")
     if not access_token:
-        # Some SDK auth providers expose headers via auth_type rather than
-        # authenticate(); let the connector use its configured SDK credentials.
-        return connect(
-            server_hostname=host,
-            http_path=SQL_WAREHOUSE_HTTP_PATH,
-            credentials_provider=lambda: workspace.config.authenticate,
+        raise RuntimeError(
+            "The Databricks app identity did not provide an access token "
+            "for the SQL connector."
         )
     return connect(
         server_hostname=host,
