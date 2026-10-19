@@ -148,20 +148,49 @@ def answer_procurement_question(question: str) -> dict:
     ])
     content = response.content
 
-    if isinstance(content, str):
-        answer = content.strip()
-    elif isinstance(content, list):
-        text_parts = []
-        for block in content:
-            if isinstance(block, dict):
-                # Include only user-facing text blocks; do not expose reasoning metadata.
-                if block.get("type") == "text" and block.get("text"):
-                    text_parts.append(block["text"])
-            elif isinstance(block, str):
-                text_parts.append(block)
-        answer = "\n".join(text_parts).strip()
-    else:
-        answer = str(content).strip()
+    def extract_answer(value):
+        # Some endpoints return content blocks as a JSON-encoded string
+        # instead of a Python list. Parse that form before rendering it.
+        if isinstance(value, str):
+            stripped = value.strip()
+            try:
+                parsed = json.loads(stripped)
+            except json.JSONDecodeError:
+                return stripped
+
+            if isinstance(parsed, list):
+                return extract_answer(parsed)
+            if isinstance(parsed, dict):
+                for key in ("answer", "final_answer", "output", "text"):
+                    candidate = parsed.get(key)
+                    if isinstance(candidate, str) and candidate.strip():
+                        return candidate.strip()
+                return stripped
+            return stripped
+
+        if isinstance(value, list):
+            text_parts = []
+            for block in value:
+                if isinstance(block, dict):
+                    # Ignore reasoning/metadata; display only user-facing text.
+                    if block.get("type") == "text":
+                        text_value = block.get("text")
+                        if isinstance(text_value, str) and text_value.strip():
+                            text_parts.append(text_value.strip())
+                elif isinstance(block, str) and block.strip():
+                    text_parts.append(block.strip())
+            return "\n\n".join(text_parts).strip()
+
+        if isinstance(value, dict):
+            for key in ("answer", "final_answer", "output", "text"):
+                candidate = value.get(key)
+                if isinstance(candidate, str) and candidate.strip():
+                    return candidate.strip()
+            return str(value)
+
+        return str(value).strip()
+
+    answer = extract_answer(content)
 
     # Keep the generated answer separate from UI components. Streamlit renders
     # review findings and the source registry in dedicated sections.
