@@ -93,8 +93,6 @@ def _get_query_rows(space_id: str, conversation_id: str, message_id: str,
     # Follow any additional result chunks returned by the Statement Execution API.
     statement = _as_dict(payload.get("statement_response", payload))
     next_link = statement.get("next_chunk_internal_link")
-    workspace = WorkspaceClient()
-    host = (workspace.config.host or "").rstrip("/")
     while next_link:
         next_payload = _genie_request("GET", next_link)
         chunk_statement = _as_dict(next_payload.get("statement_response", next_payload))
@@ -103,7 +101,9 @@ def _get_query_rows(space_id: str, conversation_id: str, message_id: str,
             str(item.get("name"))
             for item in chunk_manifest.get("columns", [])
             if isinstance(item, dict) and item.get("name")
-        ] or list(rows[0].keys()) if rows else []
+        ]
+        if not columns and rows:
+            columns = list(rows[0].keys())
         chunk_result = _as_dict(chunk_statement.get("result"))
         chunk_data = chunk_result.get("data_array") or chunk_statement.get("data_array") or []
         if columns:
