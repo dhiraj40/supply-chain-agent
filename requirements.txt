@@ -5,6 +5,6 @@ langchain-mcp-adapters==0.3.2
 
 databricks-langchain==0.20.0
 databricks-mcp==0.9.2
-
-mlflow==3.15.1
+databricks-sql-connector
+	mlflow==3.15.1
 streamlit
