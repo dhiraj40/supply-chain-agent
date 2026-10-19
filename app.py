@@ -231,6 +231,7 @@ if question:
                     procurement_result = {
                         "answer": result.get("answer", ""),
                         "route": result.get("route", ""),
+                        "display_data": result.get("display_data", {}),
                         "review_summary": result.get("review_summary", ""),
                         "source_registry": result.get("source_registry", []),
                     }
