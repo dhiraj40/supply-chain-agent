@@ -54,7 +54,14 @@ def _genie_request(method: str, path: str, *, json_body: dict | None = None) -> 
         json=json_body,
         timeout=30,
     )
-    response.raise_for_status()
+    if not response.ok:
+        # Preserve the API's diagnostic message instead of exposing only
+        # requests' generic "400 Client Error" to the Streamlit user.
+        detail = response.text[:2000]
+        raise RuntimeError(
+            f"Databricks Genie API {method} {path} failed "
+            f"with HTTP {response.status_code}: {detail}"
+        )
     return response.json() if response.content else {}
 
 
@@ -152,11 +159,15 @@ def query_procurement_genie(question: str) -> dict[str, Any]:
         text_attachment = attachment.get("text")
         if isinstance(text_attachment, dict) and text_attachment.get("content"):
             answer_parts.append(str(text_attachment["content"]))
+        # Every Genie attachment can have an attachment_id, including text
+        # attachments. Only query attachments have SQL result endpoints.
         query_attachment = attachment.get("query")
+        if not isinstance(query_attachment, dict):
+            continue
         attachment_id = (
             attachment.get("attachment_id")
-            or (query_attachment.get("attachment_id") if isinstance(query_attachment, dict) else None)
-            or (query_attachment.get("id") if isinstance(query_attachment, dict) else None)
+            or query_attachment.get("attachment_id")
+            or query_attachment.get("query_attachment_id")
         )
         if attachment_id:
             rows.extend(
