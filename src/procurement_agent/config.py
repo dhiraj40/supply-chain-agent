@@ -1,22 +1,24 @@
 import os
 
-# These are Unity Catalog three-part table names.
-PROJECT_TABLE = os.getenv(
-    "PROCUREMENT_PROJECT_TABLE",
-    "wb_transport_gold.procurement.project_procurement_summary",
+# Catalog names are configurable so dev/uat/prod can point at different layers.
+UC_GOLD_LAYER = os.getenv("UC_GOLD_LAYER", "wb_transport_gold")
+UC_SILVER_LAYER = os.getenv("UC_SILVER_LAYER", "wb_transport_silver")
+PROCUREMENT_SCHEMA = os.getenv("PROCUREMENT_SCHEMA", "procurement")
+
+PROJECT_TABLE = (
+    f"{UC_GOLD_LAYER}.{PROCUREMENT_SCHEMA}.project_procurement_summary"
 )
-TIMELINE_TABLE = os.getenv(
-    "PROCUREMENT_TIMELINE_TABLE",
-    "wb_transport_gold.procurement.procurement_timeline",
+TIMELINE_TABLE = (
+    f"{UC_GOLD_LAYER}.{PROCUREMENT_SCHEMA}.procurement_timeline"
 )
-RISK_TABLE = os.getenv(
-    "PROCUREMENT_RISK_TABLE",
-    "wb_transport_gold.procurement.procurement_risk_indicators",
+RISK_TABLE = (
+    f"{UC_GOLD_LAYER}.{PROCUREMENT_SCHEMA}.procurement_risk_indicators"
 )
-VECTOR_INDEX_NAME = os.getenv(
-    "PROCUREMENT_VECTOR_INDEX",
-    "wb_transport_silver.procurement.document_chunks_index",
+VECTOR_INDEX_NAME = (
+    f"{UC_SILVER_LAYER}.{PROCUREMENT_SCHEMA}.document_chunks_index"
 )
 MODEL_NAME = os.getenv("MODEL_NAME", "databricks-gpt-oss-120b")
-# A SQL Warehouse is required for app-side structured SQL queries.
+
+# Required only if structured queries use the Databricks SQL connector.
+# Keep unset while the app is configured to use a different query path.
 SQL_WAREHOUSE_HTTP_PATH = os.getenv("DATABRICKS_SQL_WAREHOUSE_HTTP_PATH")
