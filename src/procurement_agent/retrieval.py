@@ -5,13 +5,7 @@ from typing import Any
 import requests
 from databricks.sdk import WorkspaceClient
 
-from procurement_agent.config import (
-    PROJECT_TABLE,
-    TIMELINE_TABLE,
-    RISK_TABLE,
-    VECTOR_INDEX_NAME,
-    PROCUREMENT_GENIE_SPACE_ID,
-)
+from procurement_agent.config import VECTOR_INDEX_NAME, PROCUREMENT_GENIE_SPACE_ID
 
 DOCUMENT_COLUMNS = [
     "chunk_id", "document_id", "project_id", "document_title",
@@ -125,7 +119,7 @@ def search_projects(search_term: str, limit: int = 10):
         raise ValueError("search_term cannot be empty.")
     result = query_procurement_genie(
         f"Find up to {int(limit)} World Bank procurement projects matching '{term}'. "
-        f"Use {PROJECT_TABLE}. Return project IDs, names, country, status, contract "
+        "Use the configured Procurement Genie tables. Return project IDs, names, country, status, contract "
         "counts, total contract amounts, and the latest snapshot date where available. "
         "Do not combine multiple snapshots."
     )
@@ -137,7 +131,7 @@ def get_risk_projects(country: str | None = None, limit: int = 20):
     result = query_procurement_genie(
         f"List up to {int(limit)} World Bank procurement projects{country_filter} "
         "that require review or have procurement risk/data-quality indicators. "
-        f"Use {RISK_TABLE} and, if needed, {PROJECT_TABLE}. Return project ID, "
+        "Use the configured Procurement Genie tables. Return project ID, "
         "project name, country, review flags, issue counts, and review reasons. "
         "Do not describe a review indicator as confirmed misconduct."
     )
@@ -150,7 +144,7 @@ def get_project_timeline(project_id: str, limit: int = 100):
         raise ValueError("project_id cannot be empty.")
     result = query_procurement_genie(
         f"Show up to {int(limit)} procurement timeline events for project {pid} "
-        f"using {TIMELINE_TABLE}. Return project ID, project name, contract number, "
+        "using the configured Procurement Genie timeline data. Return project ID, project name, "
         "event date, event type, description, source reference, and date quality "
         "if available. Sort chronologically. Do not invent missing events."
     )
@@ -220,8 +214,7 @@ def retrieve_structured(question: str, limit: int = 10):
 
     result = query_procurement_genie(
         f"Answer this procurement analytics question using the configured Procurement "
-        f"Genie tables. Prefer {PROJECT_TABLE}, {TIMELINE_TABLE}, and {RISK_TABLE} "
-        f"as appropriate. Return a concise, evidence-based natural-language answer "
+        "Genie tables as appropriate. Return a concise, evidence-based natural-language answer "
         f"with relevant values, identifiers, and dates. Question: {question}"
     )
     return {"genie_answer": result.get("answer", ""), "genie_status": result.get("status", "")}
