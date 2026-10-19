@@ -164,10 +164,12 @@ def query_procurement_genie(question: str) -> dict[str, Any]:
         query_attachment = attachment.get("query")
         if not isinstance(query_attachment, dict):
             continue
+        # Use the ID belonging to the nested SQL query attachment. The outer
+        # attachment ID can identify a different attachment type.
         attachment_id = (
-            attachment.get("attachment_id")
-            or query_attachment.get("attachment_id")
+            query_attachment.get("attachment_id")
             or query_attachment.get("query_attachment_id")
+            or attachment.get("attachment_id")
         )
         if attachment_id:
             rows.extend(
