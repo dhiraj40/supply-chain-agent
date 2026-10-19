@@ -15,17 +15,17 @@ You are a procurement intelligence assistant for World Bank transport
 and infrastructure projects. Use only supplied evidence. Never invent
 project details, dates, statistics, quotations, or sources. Be transparent
 when evidence is insufficient and distinguish source statements from
-interpretation. Cite document claims with the exact [D#] IDs and structured
-claims with the exact [R#] IDs provided. Do not invent citation IDs.
+interpretation. Cite document claims with the exact [D#] IDs provided.
+Genie responses are source evidence, but do not invent row-level citation IDs.
 Review flags identify records needing validation; they are not evidence of
 fraud, misconduct, or project failure.
 
-For structured answers, preserve IDs, names, statuses, counts, and flag
-values. Do not treat missing records as proof an activity never occurred.
-
-For hybrid answers, answer only the document-based part and cite [D#].
-Do not list project IDs or produce or interpret a structured review table.
-The application appends authoritative review findings separately.
+For structured answers, preserve project IDs, names, statuses, counts, and flag
+values stated by Genie. Do not treat missing records as proof an activity never occurred.
+For hybrid answers, combine Genie’s structured analysis with relevant document
+passages. Map lessons to risk indicators or patterns actually stated by Genie.
+Cite documentary claims with [D#]. Distinguish structured findings from
+document recommendations and do not claim causation without evidence.
 Do not output the retrieved-source registry; the application adds it.
 Keep the answer focused and concise.
 """
@@ -104,39 +104,32 @@ def answer_procurement_question(question: str) -> dict:
 
     structured_registry = []
     structured_context = []
-    ref_number = 0
-    for group_name, records in structured.items():
-        if not isinstance(records, list):
-            continue
-        for record in records:
-            if not isinstance(record, dict):
-                continue
-            ref_number += 1
-            ref = f"R{ref_number}"
-            with_ref = dict(record)
-            with_ref["citation_id"] = ref
-            structured_registry.append({
-                "citation_id": ref,
-                "group": group_name,
-                "project_id": record.get("project_id") or "Unknown",
-                "project_name": record.get("project_name") or "Unknown",
-            })
+    for key, value in structured.items():
+        if isinstance(value, str) and value.strip():
             structured_context.append(
-                f"[{ref}]\nResult group: {group_name}\nRecord:\n"
-                + json.dumps(with_ref, default=str, ensure_ascii=False)
+                f"Genie response for {key} (structured analytics evidence):\\n{value.strip()}"
             )
 
     if route == "structured":
-        evidence = "\n\n".join(structured_context)
-        task = "Answer using the supplied structured records. Cite structured claims with [R#]."
-    elif route == "hybrid":
-        evidence = "\n\n".join(document_context)
+        evidence = "\\n\\n".join(structured_context)
         task = (
-            "Answer only the document-based part, citing [D#]. Do not list projects "
-            "or interpret structured flags. The app appends authoritative findings separately."
+            "Answer using the supplied Genie response. Preserve its project IDs, "
+            "metrics, and caveats. Do not claim direct SQL result rows were parsed."
+        )
+    elif route == "hybrid":
+        evidence = (
+            "STRUCTURED ANALYTICS FROM PROCUREMENT GENIE:\\n"
+            + ("\\n\\n".join(structured_context) or "No Genie answer was returned.")
+            + "\\n\\nDOCUMENT RETRIEVAL EVIDENCE:\\n"
+            + ("\\n\\n".join(document_context) or "No document passages were retrieved.")
+        )
+        task = (
+            "Combine Genie’s structured analysis with retrieved document passages. "
+            "Map lessons to specific risk indicators or patterns stated by Genie. "
+            "Cite documentary claims with [D#]. If either source is missing, say so."
         )
     else:
-        evidence = "\n\n".join(document_context)
+        evidence = "\\n\\n".join(document_context)
         task = "Answer using document passages and cite factual claims with [D#]."
 
     if not evidence.strip():
@@ -192,33 +185,34 @@ def answer_procurement_question(question: str) -> dict:
 
     answer = extract_answer(content)
 
-    # If Genie generated a valid structured answer but SQL attachment rows were
-    # not extracted, do not replace that answer with a false "no projects" result.
-    # Keep the distinction visible through review_summary above.
+    # For structured-only questions, preserve Genie’s own answer rather than
+    # asking a second model to reconstruct results from nonexistent SQL rows.
     if route == "structured":
-        genie_answer = str(structured.get("genie_answer") or "").strip()
-        if not structured.get("risk_projects") and genie_answer:
+        genie_answer = next(
+            (value.strip() for value in structured.values()
+             if isinstance(value, str) and value.strip()),
+            "",
+        )
+        if genie_answer:
             answer = genie_answer
 
-    # Keep the generated answer separate from UI components. Streamlit renders
-    # review findings and the source registry in dedicated sections.
     review_summary = ""
-    if route in ("structured", "hybrid") and structured:
-        risk_records = structured.get("risk_projects", [])
-        genie_answer = str(structured.get("genie_answer") or "").strip()
-        if risk_records:
-            review_summary = _format_review_summary(structured)
-        elif genie_answer:
-            review_summary = (
-                "Genie returned a text answer, but the application did not extract "
-                "structured SQL result rows. The answer is shown as Genie-generated "
-                "text and should be validated against direct SQL before being treated "
-                "as structured evidence."
-            )
-        elif "risk_projects" in structured:
-            review_summary = "No structured risk rows or Genie answer were retrieved; this is not proof that the table is empty."
 
     source_registry = []
+    genie_text = next(
+        (value.strip() for value in structured.values()
+         if isinstance(value, str) and value.strip()),
+        "",
+    )
+    if genie_text:
+        source_registry.append({
+            "citation_id": "Genie",
+            "source_type": "Databricks Genie",
+            "title": "Procurement structured analytics",
+            "project_id": "Multiple or not specified",
+            "detail": "Natural-language answer from the Procurement Genie Agent",
+            "source_url": None,
+        })
     for source in document_registry:
         source_registry.append({
             "citation_id": source["citation_id"],
