@@ -76,8 +76,102 @@ def _clean_url(url):
     return url if url.startswith(("https://", "http://")) else None
 
 
+def _requested_display_type(question: str) -> str:
+    q = question.lower()
+    if any(term in q for term in ("timeline", "chronological sequence", "event history")):
+        return "timeline"
+    if any(term in q for term in ("tabular", "as a table", "in a table", "show a table", "table format")):
+        return "table"
+    if any(term in q for term in ("bar chart", "bar graph")):
+        return "bar_chart"
+    if any(term in q for term in ("line chart", "line graph", "trend chart", "trend graph")):
+        return "line_chart"
+    return "narrative"
+
+
+def _build_display_data(question: str, requested_type: str, answer: str, document_context: list[str]) -> dict:
+    """Extract displayable records from retrieved evidence; never create new facts."""
+    if requested_type == "narrative":
+        return {"display_type": "narrative", "title": "", "data": []}
+
+    schema_guidance = {
+        "timeline": (
+            'Return JSON with keys display_type, title, data. display_type must be "timeline". '
+            'Each data item must contain date, event, and may contain details and source. '
+            'Only include events and dates explicitly supported by the evidence.'
+        ),
+        "table": (
+            'Return JSON with keys display_type, title, data. display_type must be "table". '
+            'data must be an array of row objects containing the fields and values requested. '
+            'Preserve IDs, dates, counts, and values exactly as stated in the evidence.'
+        ),
+        "bar_chart": (
+            'Return JSON with keys display_type, title, x_key, y_key, data. display_type must be "bar_chart". '
+            'Use only a numeric measure explicitly present in evidence; data must be row objects.'
+        ),
+        "line_chart": (
+            'Return JSON with keys display_type, title, x_key, y_key, data. display_type must be "line_chart". '
+            'Use a real date/time series and numeric measure explicitly present in evidence; data must be row objects.'
+        ),
+    }
+    evidence = (
+        "ANSWER FROM RETRIEVAL:\n" + (answer or "No answer returned.")
+        + "\n\nDOCUMENT EVIDENCE:\n"
+        + ("\n\n".join(document_context) if document_context else "No document passages.")
+    )[:14000]
+    prompt = (
+        "Convert the supplied evidence into display data for a procurement assistant. "
+        "Return JSON only, without Markdown fences. Never infer missing events, dates, counts, "
+        "or values. If evidence does not contain enough data for the requested visualization, "
+        'return {"display_type":"narrative","title":"","data":[]} instead. '
+        + schema_guidance[requested_type]
+        + "\n\nUser question:\n" + question
+        + "\n\nEvidence:\n" + evidence
+    )
+    try:
+        response = ChatDatabricks(endpoint=MODEL_NAME, temperature=0.0).invoke([
+            ("system", "You are a strict evidence-to-JSON formatter. Do not answer from general knowledge."),
+            ("user", prompt),
+        ])
+        raw = response.content
+        if not isinstance(raw, str):
+            raw = str(raw)
+        raw = raw.strip()
+        if raw.startswith("```"):
+            raw = re.sub(r"^\`\`\`(?:json)?\s*|\s*\`\`\`$", "", raw, flags=re.IGNORECASE)
+        parsed = json.loads(raw)
+        if not isinstance(parsed, dict):
+            raise ValueError("Display payload must be a JSON object.")
+        display_type = parsed.get("display_type")
+        if display_type not in {"timeline", "table", "bar_chart", "line_chart", "narrative"}:
+            raise ValueError("Unsupported display type.")
+        data = parsed.get("data", [])
+        if not isinstance(data, list) or any(not isinstance(row, dict) for row in data):
+            raise ValueError("Display data must be a list of row objects.")
+        if display_type == "timeline" and data:
+            if any(not row.get("date") or not row.get("event") for row in data):
+                raise ValueError("Timeline rows require date and event.")
+        if display_type in {"bar_chart", "line_chart"} and data:
+            x_key, y_key = parsed.get("x_key"), parsed.get("y_key")
+            if not x_key or not y_key or any(x_key not in row or y_key not in row for row in data):
+                raise ValueError("Chart keys must exist in each row.")
+        if not data:
+            return {"display_type": "narrative", "title": "", "data": []}
+        return {
+            "display_type": display_type,
+            "title": str(parsed.get("title") or ""),
+            "x_key": parsed.get("x_key"),
+            "y_key": parsed.get("y_key"),
+            "data": data,
+        }
+    except Exception:
+        # A formatting failure must not prevent the evidence-based answer from displaying.
+        return {"display_type": "narrative", "title": "", "data": []}
+
+
 def answer_procurement_question(question: str) -> dict:
     route = detect_route(question)
+    requested_type = _requested_display_type(question)
     documents = retrieve_documents(question) if route in ("documents", "hybrid") else []
     structured = retrieve_structured(question, limit=10) if route in ("structured", "hybrid") else {}
 
@@ -196,6 +290,8 @@ def answer_procurement_question(question: str) -> dict:
         if genie_answer:
             answer = genie_answer
 
+    display_data = _build_display_data(question, requested_type, answer, document_context)
+
     review_summary = ""
 
     source_registry = []
@@ -236,6 +332,7 @@ def answer_procurement_question(question: str) -> dict:
         "question": question,
         "route": route,
         "answer": answer,
+        "display_data": display_data,
         "review_summary": review_summary,
         "source_registry": source_registry,
         "structured_results": structured,
