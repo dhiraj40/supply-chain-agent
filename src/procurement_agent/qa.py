@@ -163,30 +163,40 @@ def answer_procurement_question(question: str) -> dict:
     else:
         answer = str(content).strip()
 
-    if route in ("structured", "hybrid") and structured:
-        answer = answer.rstrip() + "\n\n" + _format_review_summary(structured)
+    # Keep the generated answer separate from UI components. Streamlit renders
+    # review findings and the source registry in dedicated sections.
+    review_summary = (
+        _format_review_summary(structured)
+        if route in ("structured", "hybrid") and structured
+        else ""
+    )
 
-    source_lines = []
+    source_registry = []
     for source in document_registry:
-        line = (
-            f"[{source['citation_id']}] {source['document_title']} "
-            f"(Project: {source['project_id']}, page: {source['page_number']})"
-        )
-        if source["source_url"]:
-            line += f" URL: {source['source_url']}"
-        source_lines.append(line)
+        source_registry.append({
+            "citation_id": source["citation_id"],
+            "source_type": "Document",
+            "title": source["document_title"],
+            "project_id": source["project_id"],
+            "detail": f"Page: {source['page_number']}",
+            "source_url": source["source_url"],
+        })
     for source in structured_registry:
-        source_lines.append(
-            f"[{source['citation_id']}] Gold record — {source['project_name']} "
-            f"(Project: {source['project_id']})"
-        )
-    if source_lines:
-        answer = answer.rstrip() + "\n\n## Retrieved sources\n" + "\n".join(source_lines)
+        source_registry.append({
+            "citation_id": source["citation_id"],
+            "source_type": "Gold record",
+            "title": source["project_name"],
+            "project_id": source["project_id"],
+            "detail": source["group"],
+            "source_url": None,
+        })
 
     return {
         "question": question,
         "route": route,
         "answer": answer,
+        "review_summary": review_summary,
+        "source_registry": source_registry,
         "structured_results": structured,
         "sources": documents,
         "structured_sources": structured_registry,
