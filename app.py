@@ -11,6 +11,30 @@ if str(SRC_PATH) not in sys.path:
 from supply_chain_agent.agent import create_supply_chain_agent, ask_agent
 from procurement_agent.qa import answer_procurement_question
 
+
+def render_procurement_response(result: dict) -> None:
+    """Render answer text, review findings, and source metadata separately."""
+    st.markdown(result.get("answer") or "No answer text was returned.")
+
+    review_summary = result.get("review_summary")
+    if review_summary:
+        st.markdown(review_summary)
+
+    sources = result.get("source_registry") or []
+    if sources:
+        with st.expander(f"Retrieved sources ({len(sources)})"):
+            for source in sources:
+                citation = source.get("citation_id", "Source")
+                title = source.get("title") or "Untitled source"
+                project_id = source.get("project_id") or "Unknown"
+                detail = source.get("detail") or source.get("source_type") or ""
+                url = source.get("source_url")
+                st.markdown(f"**[{citation}] {title}**")
+                st.caption(f"{source.get('source_type', 'Source')} · Project: {project_id} · {detail}")
+                if url:
+                    st.markdown(f"[Open source document]({url})")
+
+
 TOOL_LABELS = {
     "get_material": "Material Data",
     "get_supplier": "Supplier Data",
@@ -88,7 +112,10 @@ else:
 
 for message in messages:
     with st.chat_message(message["role"]):
-        st.markdown(message["content"])
+        if message.get("procurement_result"):
+            render_procurement_response(message["procurement_result"])
+        else:
+            st.markdown(message["content"])
 
 st.markdown("#### Try an example")
 selected_question = None
@@ -117,6 +144,7 @@ if question:
         st.markdown(question)
 
     with st.chat_message("assistant"):
+        procurement_result = None
         with st.status("Working on your request...", expanded=False) as status:
             try:
                 if selected_agent == "Supply Chain Agent":
@@ -148,7 +176,13 @@ if question:
                         st.caption("Tools used: " + ", ".join(source_labels))
                 else:
                     result = answer_procurement_question(question)
-                    answer = result["answer"]
+                    procurement_result = {
+                        "answer": result.get("answer", ""),
+                        "route": result.get("route", ""),
+                        "review_summary": result.get("review_summary", ""),
+                        "source_registry": result.get("source_registry", []),
+                    }
+                    answer = result.get("answer", "")
                     st.caption(f"Retrieval route: {result['route']}")
 
                 status.update(label="Completed", state="complete")
@@ -164,8 +198,12 @@ if question:
                     "Please check the application configuration and try again."
                 )
 
-        st.markdown(answer)
+        if procurement_result:
+            render_procurement_response(procurement_result)
+        else:
+            st.markdown(answer)
 
-    st.session_state[history_key].append(
-        {"role": "assistant", "content": answer}
-    )
+    assistant_message = {"role": "assistant", "content": answer}
+    if procurement_result:
+        assistant_message["procurement_result"] = procurement_result
+    st.session_state[history_key].append(assistant_message)
