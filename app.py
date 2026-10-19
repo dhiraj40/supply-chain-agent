@@ -2,6 +2,8 @@ import asyncio
 import sys
 from pathlib import Path
 
+import pandas as pd
+import plotly.express as px
 import streamlit as st
 
 SRC_PATH = Path(__file__).resolve().parent / "src"
@@ -13,8 +15,58 @@ from procurement_agent.qa import answer_procurement_question
 
 
 def render_procurement_response(result: dict) -> None:
-    """Render answer text, review findings, and source metadata separately."""
+    """Render answer text, structured visual output, and source metadata."""
     st.markdown(result.get("answer") or "No answer text was returned.")
+
+    display = result.get("display_data") or {}
+    display_type = display.get("display_type", "narrative")
+    rows = display.get("data") or []
+
+    if display_type == "timeline" and rows:
+        df = pd.DataFrame(rows)
+        if {"date", "event"}.issubset(df.columns):
+            df["date"] = pd.to_datetime(df["date"], errors="coerce")
+            df = df.dropna(subset=["date"]).sort_values("date")
+            if not df.empty:
+                st.markdown(f"#### {display.get('title') or 'Project timeline'}")
+                hover_cols = [c for c in ("details", "source") if c in df.columns]
+                plot_df = df.copy()
+                plot_df["position"] = 1
+                fig = px.scatter(
+                    plot_df,
+                    x="date",
+                    y="position",
+                    text="event",
+                    hover_data=hover_cols,
+                )
+                fig.update_traces(mode="markers+text", textposition="top center")
+                fig.update_yaxes(visible=False, title=None)
+                fig.update_layout(xaxis_title="Date", showlegend=False)
+                st.plotly_chart(fig, use_container_width=True)
+                st.dataframe(df, use_container_width=True, hide_index=True)
+            else:
+                st.info("Timeline events were returned, but no valid dates were available.")
+                st.dataframe(pd.DataFrame(rows), use_container_width=True)
+        else:
+            st.info("Timeline data did not contain the required date and event fields.")
+            st.dataframe(pd.DataFrame(rows), use_container_width=True)
+
+    elif display_type == "table" and rows:
+        st.markdown(f"#### {display.get('title') or 'Results'}")
+        st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+
+    elif display_type in ("bar_chart", "line_chart") and rows:
+        df = pd.DataFrame(rows)
+        x_key = display.get("x_key")
+        y_key = display.get("y_key")
+        if x_key in df.columns and y_key in df.columns:
+            st.markdown(f"#### {display.get('title') or 'Results'}")
+            chart_fn = px.bar if display_type == "bar_chart" else px.line
+            fig = chart_fn(df, x=x_key, y=y_key)
+            st.plotly_chart(fig, use_container_width=True)
+            st.dataframe(df, use_container_width=True, hide_index=True)
+        else:
+            st.dataframe(df, use_container_width=True, hide_index=True)
 
     review_summary = result.get("review_summary")
     if review_summary:
