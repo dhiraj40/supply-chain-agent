@@ -273,7 +273,27 @@ def retrieve_structured(question: str, limit: int = 10):
         return {"timeline": get_project_timeline(project_id, limit)}
 
     if any(word in q for word in ["risk", "flag", "anomaly", "data quality", "review"]):
-        return {"risk_projects": get_risk_projects(country, limit)}
+        country_filter = f" in {country}" if country else ""
+        result = query_procurement_genie(
+            f"List up to {int(limit)} World Bank procurement projects{country_filter} "
+            "that have at least one procurement review signal. Use "
+            f"{RISK_TABLE}. Use the actual schema only. Return project_id, "
+            "project_name, countryshortname, status, linkage_review_flag, "
+            "deadline_review_flag, no_contracts_flag, no_notices_flag, "
+            "unmatched_award_rows, unmatched_notice_rows, deadline_anomaly_count, "
+            "and risk_review_reason. Do not assume columns named risk_type, "
+            "risk_description, or review_flag exist. Do not describe a review "
+            "indicator as confirmed misconduct."
+        )
+        return {
+            "risk_projects": result["rows"],
+            "genie_answer": result["answer"],
+            "risk_result_status": (
+                "rows_returned" if result["rows"]
+                else "answer_only" if result["answer"]
+                else "no_answer_or_rows"
+            ),
+        }
 
     if country:
         return {"projects": search_projects(country, limit)}
