@@ -112,7 +112,7 @@ def query_procurement_genie(question: str) -> dict[str, Any]:
             answer_parts.append(str(text_attachment["content"]))
 
     # Structured analytics come from Genie’s natural-language response.
-    # Do not call SQL query-result endpoints or parse SQL result attachments.
+    # Do not fetch or parse Genie SQL result attachments.
     return {
         "answer": "\\n\\n".join(answer_parts).strip(),
         "status": status,
