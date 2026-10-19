@@ -147,15 +147,21 @@ def answer_procurement_question(question: str) -> dict:
         ("user", f"Question:\n{question}\n\nRoute: {route}\n\nTask:\n{task}\n\nEvidence:\n{evidence}"),
     ])
     content = response.content
+
     if isinstance(content, str):
         answer = content.strip()
     elif isinstance(content, list):
-        answer = "\n".join(
-            block.get("text", "") if isinstance(block, dict) else str(block)
-            for block in content
-        ).strip()
+        text_parts = []
+        for block in content:
+            if isinstance(block, dict):
+                # Include only user-facing text blocks; do not expose reasoning metadata.
+                if block.get("type") == "text" and block.get("text"):
+                    text_parts.append(block["text"])
+            elif isinstance(block, str):
+                text_parts.append(block)
+        answer = "\n".join(text_parts).strip()
     else:
-        answer = str(content)
+        answer = str(content).strip()
 
     if route in ("structured", "hybrid") and structured:
         answer = answer.rstrip() + "\n\n" + _format_review_summary(structured)
