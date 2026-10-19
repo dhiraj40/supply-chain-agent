@@ -192,13 +192,31 @@ def answer_procurement_question(question: str) -> dict:
 
     answer = extract_answer(content)
 
+    # If Genie generated a valid structured answer but SQL attachment rows were
+    # not extracted, do not replace that answer with a false "no projects" result.
+    # Keep the distinction visible through review_summary above.
+    if route == "structured":
+        genie_answer = str(structured.get("genie_answer") or "").strip()
+        if not structured.get("risk_projects") and genie_answer:
+            answer = genie_answer
+
     # Keep the generated answer separate from UI components. Streamlit renders
     # review findings and the source registry in dedicated sections.
-    review_summary = (
-        _format_review_summary(structured)
-        if route in ("structured", "hybrid") and structured
-        else ""
-    )
+    review_summary = ""
+    if route in ("structured", "hybrid") and structured:
+        risk_records = structured.get("risk_projects", [])
+        genie_answer = str(structured.get("genie_answer") or "").strip()
+        if risk_records:
+            review_summary = _format_review_summary(structured)
+        elif genie_answer:
+            review_summary = (
+                "Genie returned a text answer, but the application did not extract "
+                "structured SQL result rows. The answer is shown as Genie-generated "
+                "text and should be validated against direct SQL before being treated "
+                "as structured evidence."
+            )
+        elif "risk_projects" in structured:
+            review_summary = "No structured risk rows or Genie answer were retrieved; this is not proof that the table is empty."
 
     source_registry = []
     for source in document_registry:
