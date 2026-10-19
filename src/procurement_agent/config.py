@@ -1,19 +1,9 @@
 import os
 
 # Catalog names are configurable so dev/uat/prod can point at different layers.
-UC_GOLD_LAYER = os.getenv("UC_GOLD_LAYER", "wb_transport_gold")
 UC_SILVER_LAYER = os.getenv("UC_SILVER_LAYER", "wb_transport_silver")
 PROCUREMENT_SCHEMA = os.getenv("PROCUREMENT_SCHEMA", "procurement")
 
-PROJECT_TABLE = (
-    f"{UC_GOLD_LAYER}.{PROCUREMENT_SCHEMA}.project_procurement_summary"
-)
-TIMELINE_TABLE = (
-    f"{UC_GOLD_LAYER}.{PROCUREMENT_SCHEMA}.procurement_timeline"
-)
-RISK_TABLE = (
-    f"{UC_GOLD_LAYER}.{PROCUREMENT_SCHEMA}.procurement_risk_indicators"
-)
 VECTOR_INDEX_NAME = (
     f"{UC_SILVER_LAYER}.{PROCUREMENT_SCHEMA}.document_chunks_index"
 )
