@@ -13,6 +13,9 @@ env:
   - name: GENIE_SPACE_ID
     valueFrom: genie-space
 
+  - name: PROCUREMENT_GENIE_SPACE_ID
+    valueFrom: procurement-genie-space
+
   - name: AI_SEARCH_INDEX
     value: "document_chunks_index"
 
