@@ -18,3 +18,11 @@ env:
 
   - name: STREAMLIT_GATHER_USAGE_STATS
     value: "false"
+  - name: UC_GOLD_LAYER
+    value: "wb_transport_gold"
+
+  - name: UC_SILVER_LAYER
+    value: "wb_transport_silver"
+
+  - name: PROCUREMENT_SCHEMA
+    value: "procurement"
