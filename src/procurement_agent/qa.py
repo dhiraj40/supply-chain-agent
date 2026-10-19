@@ -113,6 +113,49 @@ def _requested_display_type(question: str) -> str:
     return "narrative"
 
 
+def _fallback_chart_data_from_answer(question: str, requested_type: str, answer: str) -> dict:
+    """Build a chart only from explicit project/value pairs already present in the answer."""
+    if requested_type != "bar_chart":
+        return {"display_type": "narrative", "title": "", "data": []}
+
+    rows = []
+    # Expected examples:
+    # - **Project Name** (P123456): $1,234,567
+    # - Project Name (P123456) — USD 1,234,567
+    pattern = re.compile(
+        r"(?P<name>[^\n•]+?)\s*\((?P<project_id>P\d{4,})\)\s*[:—–-]?\s*"
+        r"(?:\*\*)?\s*(?:USD\s*)?\$?\s*(?P<value>[\d,]+(?:\.\d+)?)",
+        re.IGNORECASE,
+    )
+    for line in (answer or "").splitlines():
+        match = pattern.search(line.strip().lstrip("-* "))
+        if not match:
+            continue
+        name = re.sub(r"[*_#]+", "", match.group("name")).strip(" :—–-")
+        try:
+            value = float(match.group("value").replace(",", ""))
+        except ValueError:
+            continue
+        if name and value >= 0:
+            rows.append({
+                "project": name,
+                "project_id": match.group("project_id").upper(),
+                "contract_value_usd": value,
+            })
+
+    # Only visualize multiple explicit pairs; don't guess from prose or incomplete values.
+    if len(rows) < 2:
+        return {"display_type": "narrative", "title": "", "data": []}
+
+    return {
+        "display_type": "bar_chart",
+        "title": "Contract value by project (USD)",
+        "x_key": "project",
+        "y_key": "contract_value_usd",
+        "data": rows,
+    }
+
+
 def _build_display_data(question: str, requested_type: str, answer: str, document_context: list[str]) -> dict:
     """Extract displayable records from retrieved evidence; never create new facts."""
     if requested_type == "narrative":
@@ -189,8 +232,8 @@ def _build_display_data(question: str, requested_type: str, answer: str, documen
             "data": data,
         }
     except Exception:
-        # A formatting failure must not prevent the evidence-based answer from displaying.
-        return {"display_type": "narrative", "title": "", "data": []}
+        # Keep the answer visible, but recover simple explicit project/value pairs when possible.
+        return _fallback_chart_data_from_answer(question, requested_type, answer)
 
 
 def answer_procurement_question(question: str) -> dict:
@@ -315,6 +358,8 @@ def answer_procurement_question(question: str) -> dict:
             answer = genie_answer
 
     display_data = _build_display_data(question, requested_type, answer, document_context)
+    if display_data.get("display_type") == "narrative" and requested_type == "bar_chart":
+        display_data = _fallback_chart_data_from_answer(question, requested_type, answer)
 
     review_summary = ""
 
