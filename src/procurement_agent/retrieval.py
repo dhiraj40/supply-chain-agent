@@ -71,56 +71,8 @@ def _as_dict(value: Any) -> dict:
     return value if isinstance(value, dict) else {}
 
 
-def _query_result_rows(payload: dict) -> list[dict[str, Any]]:
-    """Convert a Genie SQL attachment result into a list of row dictionaries."""
-    statement = payload.get("statement_response", payload)
-    statement = _as_dict(statement)
-    manifest = _as_dict(statement.get("manifest"))
-    columns = [
-        str(item.get("name"))
-        for item in manifest.get("columns", [])
-        if isinstance(item, dict) and item.get("name")
-    ]
-    result = _as_dict(statement.get("result"))
-    data = result.get("data_array") or statement.get("data_array") or []
-    if not columns:
-        return []
-    return [dict(zip(columns, row)) for row in data if isinstance(row, (list, tuple))]
-
-
-def _get_query_rows(space_id: str, conversation_id: str, message_id: str,
-                    attachment_id: str) -> list[dict[str, Any]]:
-    path = (
-        f"/api/2.0/genie/spaces/{space_id}/conversations/{conversation_id}"
-        f"/messages/{message_id}/attachments/{attachment_id}/query-result"
-    )
-    payload = _genie_request("GET", path)
-    rows = _query_result_rows(payload)
-
-    # Follow any additional result chunks returned by the Statement Execution API.
-    statement = _as_dict(payload.get("statement_response", payload))
-    next_link = statement.get("next_chunk_internal_link")
-    while next_link:
-        next_payload = _genie_request("GET", next_link)
-        chunk_statement = _as_dict(next_payload.get("statement_response", next_payload))
-        chunk_manifest = _as_dict(chunk_statement.get("manifest"))
-        columns = [
-            str(item.get("name"))
-            for item in chunk_manifest.get("columns", [])
-            if isinstance(item, dict) and item.get("name")
-        ]
-        if not columns and rows:
-            columns = list(rows[0].keys())
-        chunk_result = _as_dict(chunk_statement.get("result"))
-        chunk_data = chunk_result.get("data_array") or chunk_statement.get("data_array") or []
-        if columns:
-            rows.extend(dict(zip(columns, row)) for row in chunk_data if isinstance(row, (list, tuple)))
-        next_link = chunk_statement.get("next_chunk_internal_link")
-    return rows
-
-
 def query_procurement_genie(question: str) -> dict[str, Any]:
-    """Ask the Procurement Genie Agent and return its answer plus SQL result rows."""
+    """Ask the Procurement Genie Agent and return its natural-language answer."""
     start_path = (
         f"/api/2.0/genie/spaces/{PROCUREMENT_GENIE_SPACE_ID}/start-conversation"
     )
@@ -152,38 +104,17 @@ def query_procurement_genie(question: str) -> dict[str, Any]:
         raise RuntimeError(f"Procurement Genie returned status {status}: {error or 'No details provided'}")
 
     answer_parts = []
-    rows: list[dict[str, Any]] = []
     for attachment in message.get("attachments") or []:
         if not isinstance(attachment, dict):
             continue
         text_attachment = attachment.get("text")
         if isinstance(text_attachment, dict) and text_attachment.get("content"):
             answer_parts.append(str(text_attachment["content"]))
-        # Every Genie attachment can have an attachment_id, including text
-        # attachments. Only query attachments have SQL result endpoints.
-        query_attachment = attachment.get("query")
-        if not isinstance(query_attachment, dict):
-            continue
-        # Use the ID belonging to the nested SQL query attachment. The outer
-        # attachment ID can identify a different attachment type.
-        attachment_id = (
-            query_attachment.get("attachment_id")
-            or query_attachment.get("query_attachment_id")
-            or attachment.get("attachment_id")
-        )
-        if attachment_id:
-            rows.extend(
-                _get_query_rows(
-                    PROCUREMENT_GENIE_SPACE_ID,
-                    str(conversation_id),
-                    str(message_id),
-                    str(attachment_id),
-                )
-            )
 
+    # Structured analytics come from Genie’s natural-language response.
+    # Do not call SQL query-result endpoints or parse SQL result attachments.
     return {
-        "answer": "\n\n".join(answer_parts).strip(),
-        "rows": rows,
+        "answer": "\\n\\n".join(answer_parts).strip(),
         "status": status,
     }
 
@@ -198,7 +129,7 @@ def search_projects(search_term: str, limit: int = 10):
         "counts, total contract amounts, and the latest snapshot date where available. "
         "Do not combine multiple snapshots."
     )
-    return result["rows"]
+    return result
 
 
 def get_risk_projects(country: str | None = None, limit: int = 20):
@@ -210,7 +141,7 @@ def get_risk_projects(country: str | None = None, limit: int = 20):
         "project name, country, review flags, issue counts, and review reasons. "
         "Do not describe a review indicator as confirmed misconduct."
     )
-    return result["rows"]
+    return result
 
 
 def get_project_timeline(project_id: str, limit: int = 100):
@@ -223,7 +154,7 @@ def get_project_timeline(project_id: str, limit: int = 100):
         "event date, event type, description, source reference, and date quality "
         "if available. Sort chronologically. Do not invent missing events."
     )
-    return result["rows"]
+    return result
 
 
 def extract_project_id(question: str):
@@ -270,43 +201,30 @@ def retrieve_structured(question: str, limit: int = 10):
     if any(word in q for word in ["timeline", "event history", "sequence of events"]):
         if not project_id:
             return {"message": "Provide a project ID such as P000034 to retrieve its timeline."}
-        return {"timeline": get_project_timeline(project_id, limit)}
+        result = get_project_timeline(project_id, limit)
+        return {"timeline_answer": result.get("answer", ""), "genie_status": result.get("status", "")}
 
     if any(word in q for word in ["risk", "flag", "anomaly", "data quality", "review"]):
-        country_filter = f" in {country}" if country else ""
-        result = query_procurement_genie(
-            f"List up to {int(limit)} World Bank procurement projects{country_filter} "
-            "that have at least one procurement review signal. Use "
-            f"{RISK_TABLE}. Use the actual schema only. Return project_id, "
-            "project_name, countryshortname, status, linkage_review_flag, "
-            "deadline_review_flag, no_contracts_flag, no_notices_flag, "
-            "unmatched_award_rows, unmatched_notice_rows, deadline_anomaly_count, "
-            "and risk_review_reason. Do not assume columns named risk_type, "
-            "risk_description, or review_flag exist. Do not describe a review "
-            "indicator as confirmed misconduct."
-        )
+        result = get_risk_projects(country, limit)
         return {
-            "risk_projects": result["rows"],
-            "genie_answer": result["answer"],
-            "risk_result_status": (
-                "rows_returned" if result["rows"]
-                else "answer_only" if result["answer"]
-                else "no_answer_or_rows"
-            ),
+            "risk_answer": result.get("answer", ""),
+            "genie_status": result.get("status", ""),
         }
 
     if country:
-        return {"projects": search_projects(country, limit)}
+        result = search_projects(country, limit)
+        return {"project_answer": result.get("answer", ""), "genie_status": result.get("status", "")}
     if project_id:
-        return {"projects": search_projects(project_id, limit)}
+        result = search_projects(project_id, limit)
+        return {"project_answer": result.get("answer", ""), "genie_status": result.get("status", "")}
 
     result = query_procurement_genie(
         f"Answer this procurement analytics question using the configured Procurement "
         f"Genie tables. Prefer {PROJECT_TABLE}, {TIMELINE_TABLE}, and {RISK_TABLE} "
-        f"as appropriate. Return the SQL query result rows when the question is "
-        f"answerable from the data. Question: {question}"
+        f"as appropriate. Return a concise, evidence-based natural-language answer "
+        f"with relevant values, identifiers, and dates. Question: {question}"
     )
-    return {"genie_results": result["rows"], "genie_answer": result["answer"]}
+    return {"genie_answer": result.get("answer", ""), "genie_status": result.get("status", "")}
 
 
 def retrieve_documents(question: str, top_k: int = 5):
