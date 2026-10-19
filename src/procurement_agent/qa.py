@@ -77,15 +77,39 @@ def _clean_url(url):
 
 
 def _requested_display_type(question: str) -> str:
+    """Infer a useful display from explicit instructions and common analytical intent."""
     q = question.lower()
+
+    # Explicit user requests take precedence.
     if any(term in q for term in ("timeline", "chronological sequence", "event history")):
         return "timeline"
-    if any(term in q for term in ("tabular", "as a table", "in a table", "show a table", "table format")):
-        return "table"
     if any(term in q for term in ("bar chart", "bar graph")):
         return "bar_chart"
     if any(term in q for term in ("line chart", "line graph", "trend chart", "trend graph")):
         return "line_chart"
+    if any(term in q for term in (
+        "tabular", "as a table", "in a table", "show a table", "table format",
+        "in table form", "display as table",
+    )):
+        return "table"
+
+    # Infer a chart for comparisons of numeric measures across entities.
+    comparison_terms = ("compare", "comparison", "compare across", "highest", "lowest", "top ")
+    numeric_terms = ("contract value", "contract amount", "award value", "amount", "count", "number of")
+    if any(term in q for term in comparison_terms) and any(term in q for term in numeric_terms):
+        return "bar_chart"
+
+    # Project/record listings and risk-flag summaries are most readable as tables.
+    if any(term in q for term in (
+        "risk indicator", "review flag", "review flags", "which projects",
+        "list all", "list the", "show projects", "projects with",
+        "missing contracts", "missing notices", "top 10", "top 20",
+    )):
+        return "table"
+
+    if any(term in q for term in ("over time", "trend", "monthly", "yearly", "by date")):
+        return "line_chart"
+
     return "narrative"
 
 
